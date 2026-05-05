@@ -1,0 +1,32 @@
+data:
+    # IMPORTANTE: Apuntar a la carpeta del idioma (data/en/ para How2Sign o data/de/ para PHOENIX)
+    data_path: data/en/
+    version: how2sign
+    # Ajusta esto según el tamaño de tu vector de keypoints (ej. 50 * 3)
+    feature_size: 150 
+    level: word
+    txt_lowercase: true
+    max_sent_length: 200 # Reducir sentencias extremadamente largas
+
+training:
+    use_cuda: true
+    # VRAM STRICT OPTIMIZATION: 
+    batch_size: 2             # Un batch diminuto cabe en 2GB VRAM
+    batch_multiplier: 16      # Gradient Accumulation: Simula un batch real de 32 (2 * 16)
+    epochs: 100
+    learning_rate: 0.001
+    eval_batch_size: 2
+    recognition_loss_weight: 1.0
+    translation_loss_weight: 1.0
+
+model:
+    encoder:
+        type: transformer
+        hidden_size: 128     # Reducido drásticamente (original era 512)
+        num_layers: 2        # Reducido (original 3)
+        num_heads: 4         # Reducido (original 8)
+    decoder:
+        type: transformer
+        hidden_size: 128     # Reducido drásticamente
+        num_layers: 2        # Reducido
+        num_heads: 4         # Reducido
