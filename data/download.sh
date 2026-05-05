@@ -80,8 +80,8 @@ dataset_submenu() {
         case $opt in
             1) "download_$id" ;;
             2) "prepare_$id" ;;
-            3) delete_menu "$id" "$name" "$code"; [ $? -eq 2 ] && return ;;
-            4) return ;;
+            3) delete_menu "$id" "$name" "$code"; [ $? -eq 2 ] && clear && return ;;
+            4) clear; return ;;
         esac
     done
 }
