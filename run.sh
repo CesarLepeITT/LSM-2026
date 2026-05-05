@@ -11,44 +11,122 @@ CONFIG_FILE="configs/how2sign.yaml"
 # ==============================================================================
 # 1. GESTIÓN DEL ENTORNO CONDA
 # ==============================================================================
-echo "========================================"
-echo "Verificando entorno Conda: $ENV_NAME"
-echo "========================================"
+echo -e "\n========================================"
+echo -e "Verificando entorno Conda: ${CYAN}$ENV_NAME${NC}"
+echo -e "========================================"
 
-# Obtener la ruta base de Conda para activarlo correctamente en scripts Bash
-source $(conda info --base)/etc/profile.d/conda.sh
+# 1. Configuración de seguridad y Shell de Conda
+set -e # Detener el script si ocurre un error
+CONDA_SHELL_PATH=$(conda info --base)/etc/profile.d/conda.sh
 
-if conda info --envs | grep -q "^$ENV_NAME "; then
-    echo "El entorno '$ENV_NAME' ya existe. Activando..."
-    conda activate $ENV_NAME
+if [ -f "$CONDA_SHELL_PATH" ]; then
+    source "$CONDA_SHELL_PATH"
 else
-    echo "Creando el entorno '$ENV_NAME' con Python $PYTHON_VERSION..."
-    conda create -y -n $ENV_NAME python=$PYTHON_VERSION
-    conda activate $ENV_NAME
-    
-    if [ ! -f "requirements.txt" ]; then
-        echo "ERROR: No se encuentra el archivo requirements.txt"
+    echo -e "${RED}ERROR: No se pudo localizar conda.sh para la activación.${NC}"
+    exit 1
+fi
+
+# 2. Crear entorno si no existe
+if ! conda info --envs | grep -q "^$ENV_NAME "; then
+    echo -e "${YELLOW}Creando entorno '$ENV_NAME' (Python $PYTHON_VERSION)...${NC}"
+    # Intentar usar mamba si está disponible para mayor velocidad
+    if command -v mamba &> /dev/null; then
+        mamba create -y -n "$ENV_NAME" python="$PYTHON_VERSION"
+    else
+        conda create -y -n "$ENV_NAME" python="$PYTHON_VERSION"
+    fi
+fi
+
+# 3. Activar entorno
+echo -e "Activando entorno: ${GREEN}$ENV_NAME${NC}"
+conda activate "$ENV_NAME"
+
+# 4. Sincronización inteligente de dependencias
+if [ -f "requirements.txt" ]; then
+    echo "Sincronizando dependencias..."
+    # Usamos pip check o simplemente instalamos (pip es inteligente y no reinstala lo que ya está)
+    if ! pip install -r requirements.txt; then
+        echo -e "${RED}ERROR: Falló la instalación de dependencias.${NC}"
         exit 1
     fi
-    echo "Instalando dependencias desde requirements.txt..."
-    pip install -r requirements.txt
+else
+    echo -e "${YELLOW}AVISO: requirements.txt no encontrado. Saltando instalación.${NC}"
 fi
+
+# Desactivar 'set -e' para el resto del script si prefieres manejo manual de errores
+set +e
 
 # ==============================================================================
 # 2. GESTIÓN DE DATOS
 # ==============================================================================
-echo -e "\n========================================"
-echo "Verificando Datos"
-echo "========================================"
-# Validamos si al menos una de las carpetas generadas por manage_datasets existe.
-if [ ! -d "data/en" ] && [ ! -d "data/de" ]; then
-    echo "AVISO: No se encontraron directorios de datos."
-    echo "Lanzando herramienta de gestión de datasets (manage_datasets.sh)..."
-    chmod +x data/manage_datasets.sh
-    ./data/manage_datasets.sh
-else
-    echo "Carpetas de datos (data/en o data/de) detectadas. Continuando."
-fi
+
+CONFIG_FILE="data/datasets.conf"
+DOWNLOAD_SCRIPT="data/download.sh"
+
+check_data_integrity() {
+    local datasets_found=0
+    if [ -f "$CONFIG_FILE" ]; then
+        while IFS='|' read -r id name code lang || [ -n "$id" ]; do
+            [ -z "$id" ] && continue
+            DATA_PATH="data/$code"
+            # Cuenta archivos en subcarpetas estándar
+            count=$(find "$DATA_PATH" -type f \( -path "*/train/*" -o -path "*/test/*" -o -path "*/val/*" -o -path "*/dev/*" \) 2>/dev/null | wc -l)
+            if [ "$count" -gt 0 ]; then
+                ((datasets_found++))
+                echo -e "  [${GREEN}OK${NC}] $name ($lang): $count archivos detectados."
+            else
+                echo -e "  [${RED}!!${NC}] $name ($lang): Sin datos en train/test/val."
+            fi
+        done < "$CONFIG_FILE"
+    fi
+    return "$datasets_found"
+}
+
+while true; do
+    echo -e "\n========================================"
+    echo -e "       CONTROL DE DATASETS SLT"
+    echo -e "========================================"
+    echo "1) Abrir Gestor de Datasets (Descargar/Preparar)"
+    echo "2) Comprobar integridad de datos actuales"
+    echo "3) Continuar con el entrenamiento"
+    echo -e "========================================\n"
+    read -p "Selecciona una opción [1-3]: " opt_data
+
+    case $opt_data in
+        1)
+            if [ -f "$DOWNLOAD_SCRIPT" ]; then
+                chmod +x "$DOWNLOAD_SCRIPT"
+                "$DOWNLOAD_SCRIPT"
+            else
+                echo -e "${RED}Error: No se encuentra $DOWNLOAD_SCRIPT${NC}"
+            fi
+            ;;
+        2)
+            echo -e "\nVerificando carpetas según $CONFIG_FILE..."
+            check_data_integrity
+            read -p "Presiona Enter para volver..."
+            ;;
+        3)
+            echo -e "\nValidando requisitos para continuar..."
+            check_data_integrity
+            valid_count=$?
+            
+            if [ "$valid_count" -gt 0 ]; then
+                echo -e "\n${GREEN}Validación exitosa. Continuando con el entrenamiento...${NC}"
+                break # Sale del bucle y sigue con el resto del script principal
+            else
+                echo -e "\n${RED}ERROR CRÍTICO: No hay datos preparados.${NC}"
+                echo -e "El entrenamiento no puede iniciar sin archivos en train/test/val."
+                echo -e "Sugerencia: Ejecuta la opción (1) para descargar o preparar datasets."
+                exit 1 # Detiene el script por completo
+            fi
+            ;;
+        *)
+            echo -e "${RED}Opción no válida.${NC}"
+            sleep 1
+            ;;
+    esac
+done
 
 # ==============================================================================
 # 3. LECTURA DE CONFIGURACIÓN

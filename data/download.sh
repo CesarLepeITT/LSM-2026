@@ -19,6 +19,17 @@ fi
 
 [ -f "$MANAGER_FILE" ] && source "$MANAGER_FILE"
 
+# Función para obtener el tamaño de una carpeta
+get_size() {
+    local folder="$BASE_DIR/$1"
+    if [ -d "$folder" ]; then
+        # du -sh devuelve algo como "1.2G  /ruta/..." -> nos quedamos solo con "1.2G"
+        du -sh "$folder" 2>/dev/null | awk '{print $1}'
+    else
+        echo "0B"
+    fi
+}
+
 delete_menu() {
     local id="$1" name="$2" code="$3"
     while true; do
@@ -37,17 +48,14 @@ delete_menu() {
             2) 
                 read -p "¿Estás seguro de eliminar TODO rastro de $name? [s/N]: " confirm
                 if [[ "$confirm" =~ ^[sS]$ ]]; then
-                    # Borrar datos físicos
                     "delete_full_$id"
-                    # Borrar del archivo de configuración
                     sed -i "/^$id|/d" "$CONFIG_FILE"
                     echo -e "${GREEN}Dataset eliminado del registro.${NC}"
                     sleep 2
-                    return 2 # Código especial para salir al menú principal
+                    return 2
                 fi
                 ;;
             3) return ;;
-            *) echo -e "${RED}Opción inválida.${NC}"; sleep 1 ;;
         esac
     done
 }
@@ -55,9 +63,10 @@ delete_menu() {
 dataset_submenu() {
     local id="$1" name="$2" code="$3" lang="$4"
     while true; do
+        local size=$(get_size "$code")
         clear
         echo -e "${CYAN}================================================${NC}"
-        echo -e "${CYAN} Dataset: $name ($lang) ${NC}"
+        echo -e "${CYAN} Dataset: $name ($lang) | Peso: $size ${NC}"
         echo -e "${CYAN}================================================${NC}"
         echo "Ruta: $BASE_DIR/$code/"
         echo "------------------------------------------------"
@@ -71,18 +80,16 @@ dataset_submenu() {
         case $opt in
             1) "download_$id" ;;
             2) "prepare_$id" ;;
-            3) 
-                delete_menu "$id" "$name" "$code"
-                [ $? -eq 2 ] && return # Si se eliminó completo, volver al inicio
-                ;;
+            3) delete_menu "$id" "$name" "$code"; [ $? -eq 2 ] && return ;;
             4) return ;;
-            *) echo -e "${RED}Opción inválida.${NC}"; sleep 1 ;;
         esac
     done
 }
 
 add_new_dataset() {
     clear
+    echo -e "${YELLOW}================================================${NC}"
+    echo "   Añadir Nuevo Dataset"
     echo -e "${YELLOW}================================================${NC}"
     read -p "Nombre del Dataset: " new_name
     read -p "Idioma: " new_lang
@@ -108,9 +115,8 @@ delete_data_${new_id}() {
     read -p "Datos borrados. Enter..."
 }
 delete_full_${new_id}() {
-    echo -e "\\n\${RED}Eliminando carpeta $new_code/ y funciones...\${NC}"
+    echo -e "\\n\${RED}Eliminando carpeta $new_code/ completamente...\${NC}"
     rm -rf "$BASE_DIR/$new_code"
-    # Nota: Las funciones se quedan en el .sh pero el ID ya no existirá en .conf
 }
 EOF
     source "$MANAGER_FILE"
@@ -122,15 +128,19 @@ while true; do
     echo -e "${YELLOW}================================================${NC}"
     echo -e "${YELLOW}   GESTOR DE DATASETS SLT                       ${NC}"
     echo -e "${YELLOW}================================================${NC}"
-    echo "Espacio libre: $(df -h "$BASE_DIR" | awk 'NR==2 {print $4}')"
+    echo "Espacio libre en disco: $(df -h "$BASE_DIR" | awk 'NR==2 {print $4}')"
     echo "------------------------------------------------"
+    
     datasets=(); i=1
     while IFS='|' read -r id name code lang || [ -n "$id" ]; do
         [ -z "$id" ] && continue
+        # Calculamos el peso para mostrarlo en el menú principal también
+        size=$(get_size "$code")
         datasets+=("$id|$name|$code|$lang")
-        echo "$i. $name ($lang)"
+        echo -e "$i. $name ($lang) - ${CYAN}$size${NC}"
         ((i++))
     done < "$CONFIG_FILE"
+    
     echo "------------------------------------------------"
     echo "$i. Añadir nuevo dataset"
     echo "$((i+1)). Salir"
