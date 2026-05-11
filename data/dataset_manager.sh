@@ -33,21 +33,3 @@ delete_full_how2sign() {
     echo -e "\n${RED}Eliminando carpeta en/ completamente...${NC}"
     rm -rf "$BASE_DIR/en"; read -p "Enter..."
 }
-
-
-# --- Funciones para a ---
-download_a() {
-    echo -e "\n${YELLOW}[NO IMPLEMENTADO]${NC} Edita /home/gallobota/LSM-2026/data/dataset_manager.sh"; read -p "Enter..."
-}
-prepare_a() {
-    echo -e "\n${YELLOW}[NO IMPLEMENTADO]${NC} Edita /home/gallobota/LSM-2026/data/dataset_manager.sh"; read -p "Enter..."
-}
-delete_data_a() {
-    echo -e "\n${RED}Vaciando carpeta a/...${NC}"
-    rm -rf "/home/gallobota/LSM-2026/data/a"/*
-    read -p "Datos borrados. Enter..."
-}
-delete_full_a() {
-    echo -e "\n${RED}Eliminando carpeta a/ completamente...${NC}"
-    rm -rf "/home/gallobota/LSM-2026/data/a"
-}
