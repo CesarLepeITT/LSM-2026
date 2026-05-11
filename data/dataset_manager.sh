@@ -3,7 +3,7 @@
 # --- PHOENIX-14T ---
 download_phoenix() {
     echo -e "\n${GREEN}Descargando PHOENIX...${NC}"
-    wget -c -P "$BASE_DIR/de" "http://cihancamgoz.com/files/cvpr2020/phoenix14t.pami0.train"
+    wget -c -P "$BASE_DIR/de" "https://www-i6.informatik.rwth-aachen.de/ftp/pub/rwth-phoenix/2016/phoenix-2014-T.v3.tar.gz"
     read -p "Enter..."
 }
 prepare_phoenix() {
@@ -33,20 +33,4 @@ delete_full_how2sign() {
     echo -e "\n${RED}Eliminando carpeta en/ completamente...${NC}"
     rm -rf "$BASE_DIR/en"; read -p "Enter..."
 }
-# --- Funciones para cesar ---
-download_cesar() {
-    echo -e "\n${YELLOW}[NO IMPLEMENTADO]${NC} Edita /home/gallobota/LSM-2026/data/dataset_manager.sh"; read -p "Enter..."
-}
-prepare_cesar() {
-    echo -e "\n${YELLOW}[NO IMPLEMENTADO]${NC} Edita /home/gallobota/LSM-2026/data/dataset_manager.sh"; read -p "Enter..."
-}
-delete_data_cesar() {
-    echo -e "\n${RED}Vaciando carpeta cs/...${NC}"
-    rm -rf "/home/gallobota/LSM-2026/data/cs"/*
-    read -p "Datos borrados. Enter..."
-}
-delete_full_cesar() {
-    echo -e "\n${RED}Eliminando carpeta cs/ y funciones...${NC}"
-    rm -rf "/home/gallobota/LSM-2026/data/cs"
-    # Nota: Las funciones se quedan en el .sh pero el ID ya no existirá en .conf
-}
+
