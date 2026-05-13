@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
+"""
+Transformer layers - Modernized with FlashAttention support (PyTorch 2.0+)
+"""
 
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 
@@ -13,6 +17,9 @@ class MultiHeadedAttention(nn.Module):
 
     Implementation modified from OpenNMT-py.
     https://github.com/OpenNMT/OpenNMT-py
+
+    Modernized: uses F.scaled_dot_product_attention when available (PyTorch 2.0+)
+    for automatic FlashAttention / Memory-Efficient Attention selection.
     """
 
     def __init__(self, num_heads: int, size: int, dropout: float = 0.1):
@@ -37,6 +44,10 @@ class MultiHeadedAttention(nn.Module):
         self.output_layer = nn.Linear(size, size)
         self.softmax = nn.Softmax(dim=-1)
         self.dropout = nn.Dropout(dropout)
+        self.dropout_p = dropout
+
+        # Check if we can use Flash/Memory-Efficient Attention
+        self._use_sdpa = hasattr(F, "scaled_dot_product_attention")
 
     def forward(self, k: Tensor, v: Tensor, q: Tensor, mask: Tensor = None):
         """
@@ -61,24 +72,44 @@ class MultiHeadedAttention(nn.Module):
         v = v.view(batch_size, -1, num_heads, self.head_size).transpose(1, 2)
         q = q.view(batch_size, -1, num_heads, self.head_size).transpose(1, 2)
 
-        # compute scores
-        q = q / math.sqrt(self.head_size)
+        if self._use_sdpa:
+            # Use PyTorch 2.0+ scaled_dot_product_attention
+            # This automatically selects FlashAttention v2, Memory-Efficient,
+            # or Math backend depending on GPU capability
+            if mask is not None:
+                # Convert mask [B, 1, M] -> [B, 1, 1, M] for broadcasting
+                attn_mask = mask.unsqueeze(1)  # [B, 1, 1, M]
+            else:
+                attn_mask = None
 
-        # batch x num_heads x query_len x key_len
-        scores = torch.matmul(q, k.transpose(2, 3))
+            dropout_p = self.dropout_p if self.training else 0.0
+            context = F.scaled_dot_product_attention(
+                q, k, v,
+                attn_mask=attn_mask,
+                dropout_p=dropout_p,
+                is_causal=False,
+            )
+        else:
+            # Fallback: manual attention computation
+            # compute scores
+            q = q / math.sqrt(self.head_size)
 
-        # apply the mask (if we have one)
-        # we add a dimension for the heads to it below: [B, 1, 1, M]
-        if mask is not None:
-            scores = scores.masked_fill(~mask.unsqueeze(1), float("-inf"))
+            # batch x num_heads x query_len x key_len
+            scores = torch.matmul(q, k.transpose(2, 3))
 
-        # apply attention dropout and compute context vectors.
-        attention = self.softmax(scores)
-        attention = self.dropout(attention)
+            # apply the mask (if we have one)
+            # we add a dimension for the heads to it below: [B, 1, 1, M]
+            if mask is not None:
+                scores = scores.masked_fill(~mask.unsqueeze(1), float("-inf"))
 
-        # get context vector (select values with attention) and reshape
-        # back to [B, M, D]
-        context = torch.matmul(attention, v)
+            # apply attention dropout and compute context vectors.
+            attention = self.softmax(scores)
+            attention = self.dropout(attention)
+
+            # get context vector (select values with attention) and reshape
+            context = torch.matmul(attention, v)
+
+        # reshape back to [B, M, D]
         context = (
             context.transpose(1, 2)
             .contiguous()

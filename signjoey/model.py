@@ -1,9 +1,9 @@
 # coding: utf-8
-import tensorflow as tf
-
-tf.config.set_visible_devices([], "GPU")
-
+"""
+Sign Language Translation Model - Modernized (pure PyTorch, no TensorFlow)
+"""
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -24,6 +24,132 @@ from signjoey.batch import Batch
 from signjoey.helpers import freeze_params
 from torch import Tensor
 from typing import Union
+
+
+def ctc_greedy_decode(gloss_probabilities, sgn_lengths):
+    """
+    Greedy CTC decoding in pure PyTorch (replaces TensorFlow's ctc_beam_search_decoder).
+    Decodes the most probable label at each timestep and removes blanks + repeated labels.
+
+    :param gloss_probabilities: log probabilities, shape (T, N, C)
+    :param sgn_lengths: lengths of source sequences, shape (N,)
+    :return: list of decoded gloss index sequences (one per batch item)
+    """
+    # gloss_probabilities: (T, N, C) - already log-softmax'd
+    # Get best indices per timestep: (T, N)
+    best_indices = gloss_probabilities.argmax(dim=-1)  # (T, N)
+    batch_size = best_indices.shape[1]
+
+    decoded_sequences = []
+    for b in range(batch_size):
+        seq_len = int(sgn_lengths[b])
+        raw_seq = best_indices[:seq_len, b].tolist()
+        # CTC decoding: remove blanks (index 0) and collapse repeated labels
+        decoded = []
+        for idx in raw_seq:
+            if idx != 0:  # Skip blank token
+                if len(decoded) == 0 or decoded[-1] != idx:
+                    decoded.append(idx)
+        decoded_sequences.append(decoded)
+
+    return decoded_sequences
+
+
+def ctc_beam_decode(gloss_probabilities, sgn_lengths, beam_width=10):
+    """
+    CTC beam search decoding in pure PyTorch.
+    A simplified prefix beam search implementation.
+
+    :param gloss_probabilities: log probabilities, shape (T, N, C)
+    :param sgn_lengths: lengths of source sequences, shape (N,)
+    :param beam_width: beam width for search
+    :return: list of decoded gloss index sequences (one per batch item)
+    """
+    batch_size = gloss_probabilities.shape[1]
+    decoded_sequences = []
+
+    for b in range(batch_size):
+        seq_len = int(sgn_lengths[b])
+        log_probs = gloss_probabilities[:seq_len, b, :]  # (T, C)
+        num_classes = log_probs.shape[1]
+
+        # beam: list of (prefix_tuple, (p_blank, p_non_blank))
+        # p_blank and p_non_blank are log probabilities
+        NEG_INF = float('-inf')
+        beam = {(): (log_probs[0, 0].item(), NEG_INF)}  # empty prefix, blank prob
+
+        # Initialize with single-character prefixes
+        for c in range(1, num_classes):
+            beam[(c,)] = (NEG_INF, log_probs[0, c].item())
+
+        for t in range(1, seq_len):
+            new_beam = {}
+            # Prune to beam_width
+            scored = [(prefix, _log_sum_exp(pb, pnb))
+                      for prefix, (pb, pnb) in beam.items()]
+            scored.sort(key=lambda x: x[1], reverse=True)
+            scored = scored[:beam_width]
+
+            for prefix, _ in scored:
+                pb, pnb = beam[prefix]
+                p_total = _log_sum_exp(pb, pnb)
+
+                # Case 1: extend with blank
+                key = prefix
+                if key in new_beam:
+                    new_beam[key] = (
+                        _log_sum_exp(new_beam[key][0], p_total + log_probs[t, 0].item()),
+                        new_beam[key][1],
+                    )
+                else:
+                    new_beam[key] = (p_total + log_probs[t, 0].item(), NEG_INF)
+
+                # Case 2: extend with each non-blank character
+                for c in range(1, num_classes):
+                    new_prefix = prefix + (c,)
+                    lp = log_probs[t, c].item()
+
+                    if len(prefix) > 0 and prefix[-1] == c:
+                        # Same character as last: only extend from blank
+                        p_new = pb + lp
+                        # Also allow extending the prefix itself (collapse)
+                        if prefix in new_beam:
+                            new_beam[prefix] = (
+                                new_beam[prefix][0],
+                                _log_sum_exp(new_beam[prefix][1], pnb + lp),
+                            )
+                        else:
+                            new_beam[prefix] = (NEG_INF, pnb + lp)
+                    else:
+                        p_new = p_total + lp
+
+                    if new_prefix in new_beam:
+                        new_beam[new_prefix] = (
+                            new_beam[new_prefix][0],
+                            _log_sum_exp(new_beam[new_prefix][1], p_new),
+                        )
+                    else:
+                        new_beam[new_prefix] = (NEG_INF, p_new)
+
+            beam = new_beam
+
+        # Select best beam
+        best_prefix = max(beam.items(), key=lambda x: _log_sum_exp(x[1][0], x[1][1]))
+        decoded_sequences.append(list(best_prefix[0]))
+
+    return decoded_sequences
+
+
+def _log_sum_exp(a, b):
+    """Numerically stable log-sum-exp of two log values."""
+    if a == float('-inf'):
+        return b
+    if b == float('-inf'):
+        return a
+    if a >= b:
+        return a + np.log1p(np.exp(b - a))
+    else:
+        return b + np.log1p(np.exp(a - b))
 
 
 class SignModel(nn.Module):
@@ -266,30 +392,20 @@ class SignModel(nn.Module):
             gloss_probabilities = gloss_scores.log_softmax(2)
             # Turn it into T x N x C
             gloss_probabilities = gloss_probabilities.permute(1, 0, 2)
-            gloss_probabilities = gloss_probabilities.cpu().detach().numpy()
-            tf_gloss_probabilities = np.concatenate(
-                (gloss_probabilities[:, :, 1:], gloss_probabilities[:, :, 0, None]),
-                axis=-1,
-            )
+            gloss_probabilities_np = gloss_probabilities.cpu().detach()
 
+            # Pure PyTorch CTC decoding (no TensorFlow needed)
             assert recognition_beam_size > 0
-            ctc_decode, _ = tf.nn.ctc_beam_search_decoder(
-                inputs=tf_gloss_probabilities,
-                sequence_length=batch.sgn_lengths.cpu().detach().numpy(),
-                beam_width=recognition_beam_size,
-                top_paths=1,
-            )
-            ctc_decode = ctc_decode[0]
-            # Create a decoded gloss list for each sample
-            tmp_gloss_sequences = [[] for i in range(gloss_scores.shape[0])]
-            for (value_idx, dense_idx) in enumerate(ctc_decode.indices):
-                tmp_gloss_sequences[dense_idx[0]].append(
-                    ctc_decode.values[value_idx].numpy() + 1
+            if recognition_beam_size == 1:
+                decoded_gloss_sequences = ctc_greedy_decode(
+                    gloss_probabilities=gloss_probabilities_np,
+                    sgn_lengths=batch.sgn_lengths.cpu().detach(),
                 )
-            decoded_gloss_sequences = []
-            for seq_idx in range(0, len(tmp_gloss_sequences)):
-                decoded_gloss_sequences.append(
-                    [x[0] for x in groupby(tmp_gloss_sequences[seq_idx])]
+            else:
+                decoded_gloss_sequences = ctc_beam_decode(
+                    gloss_probabilities=gloss_probabilities_np,
+                    sgn_lengths=batch.sgn_lengths.cpu().detach(),
+                    beam_width=recognition_beam_size,
                 )
         else:
             decoded_gloss_sequences = None

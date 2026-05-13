@@ -1,4 +1,7 @@
 # coding: utf-8
+"""
+Batch module - Modernized (works with dict batches from DataLoader)
+"""
 import math
 import random
 import torch
@@ -7,12 +10,12 @@ import numpy as np
 
 class Batch:
     """Object for holding a batch of data with mask during training.
-    Input is a batch from a torch text iterator.
+    Input is a batch dict from the custom collate_fn.
     """
 
     def __init__(
         self,
-        torch_batch,
+        batch_dict,
         txt_pad_index,
         sgn_dim,
         is_train: bool = False,
@@ -22,12 +25,12 @@ class Batch:
         random_frame_masking_ratio: float = None,
     ):
         """
-        Create a new joey batch from a torch batch.
-        This batch extends torch text's batch attributes with sgn (sign),
+        Create a new joey batch from a dict batch.
+        This batch extends the batch dict attributes with sgn (sign),
         gls (gloss), and txt (text) length, masks, number of non-padded tokens in txt.
         Furthermore, it can be sorted by sgn length.
 
-        :param torch_batch:
+        :param batch_dict: dict from collate_fn with keys: sequence, signer, sgn, sgn_lengths, gls, gls_lengths, txt, txt_lengths
         :param txt_pad_index:
         :param sgn_dim:
         :param is_train:
@@ -36,10 +39,11 @@ class Batch:
         """
 
         # Sequence Information
-        self.sequence = torch_batch.sequence
-        self.signer = torch_batch.signer
+        self.sequence = batch_dict["sequence"]
+        self.signer = batch_dict["signer"]
         # Sign
-        self.sgn, self.sgn_lengths = torch_batch.sgn
+        self.sgn = batch_dict["sgn"]
+        self.sgn_lengths = batch_dict["sgn_lengths"]
 
         # Here be dragons
         if frame_subsampling_ratio:
@@ -93,8 +97,9 @@ class Batch:
         self.use_cuda = use_cuda
         self.num_seqs = self.sgn.size(0)
 
-        if hasattr(torch_batch, "txt"):
-            txt, txt_lengths = torch_batch.txt
+        if "txt" in batch_dict and batch_dict["txt"] is not None:
+            txt = batch_dict["txt"]
+            txt_lengths = batch_dict["txt_lengths"]
             # txt_input is used for teacher forcing, last one is cut off
             self.txt_input = txt[:, :-1]
             self.txt_lengths = txt_lengths
@@ -104,8 +109,9 @@ class Batch:
             self.txt_mask = (self.txt_input != txt_pad_index).unsqueeze(1)
             self.num_txt_tokens = (self.txt != txt_pad_index).data.sum().item()
 
-        if hasattr(torch_batch, "gls"):
-            self.gls, self.gls_lengths = torch_batch.gls
+        if "gls" in batch_dict and batch_dict["gls"] is not None:
+            self.gls = batch_dict["gls"]
+            self.gls_lengths = batch_dict["gls_lengths"]
             self.num_gls_tokens = self.gls_lengths.sum().detach().clone().numpy()
 
         if use_cuda:

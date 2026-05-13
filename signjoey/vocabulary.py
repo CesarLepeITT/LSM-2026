@@ -1,9 +1,11 @@
 # coding: utf-8
+"""
+Vocabulary module - Modernized (no torchtext dependency)
+"""
 import numpy as np
 
 from collections import defaultdict, Counter
 from typing import List
-from torchtext.legacy.data import Dataset
 
 SIL_TOKEN = "<si>"
 UNK_TOKEN = "<unk>"
@@ -16,7 +18,7 @@ class Vocabulary:
     """ Vocabulary represents mapping between tokens and indices. """
 
     def __init__(self):
-        # don't rename stoi and itos since needed for torchtext
+        # don't rename stoi and itos since needed for compatibility
         # warning: stoi grows with unknown tokens, don't use for saving or size
         self.specials = []
         self.itos = []
@@ -160,9 +162,7 @@ class GlossVocabulary(Vocabulary):
         elif file is not None:
             self._from_file(file)
 
-        # TODO (Cihan): This bit is hardcoded so that the silence token
-        #   is the first label to be able to do CTC calculations (decoding etc.)
-        #   Might fix in the future.
+        # The silence token must be at index 0 for CTC calculations
         assert self.stoi[SIL_TOKEN] == 0
 
     def arrays_to_sentences(self, arrays: np.array) -> List[List[str]]:
@@ -192,19 +192,18 @@ def sort_and_cut(counter: Counter, limit: int):
 
 
 def build_vocab(
-    field: str, max_size: int, min_freq: int, dataset: Dataset, vocab_file: str = None
+    field: str, max_size: int, min_freq: int, dataset, vocab_file: str = None
 ) -> Vocabulary:
     """
-    Builds vocabulary for a torchtext `field` from given`dataset` or
-    `vocab_file`.
+    Builds vocabulary from given dataset or vocab_file.
 
-    :param field: attribute e.g. "src"
+    :param field: attribute e.g. "gls" or "txt"
     :param max_size: maximum size of vocabulary
     :param min_freq: minimum frequency for an item to be included
     :param dataset: dataset to load data for field from
     :param vocab_file: file to store the vocabulary,
         if not None, load vocabulary from here
-    :return: Vocabulary created from either `dataset` or `vocab_file`
+    :return: Vocabulary created from either dataset or vocab_file
     """
 
     if vocab_file is not None:
@@ -217,11 +216,11 @@ def build_vocab(
             raise ValueError("Unknown vocabulary type")
     else:
         tokens = []
-        for i in dataset.examples:
+        for sample in dataset:
             if field == "gls":
-                tokens.extend(i.gls)
+                tokens.extend(sample["gloss"].strip().split())
             elif field == "txt":
-                tokens.extend(i.txt)
+                tokens.extend(sample["text"].strip().split())
             else:
                 raise ValueError("Unknown field type")
 

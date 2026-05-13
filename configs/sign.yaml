@@ -1,7 +1,8 @@
-name: sign_experiment
+name: phoenix_2014t_experiment
 data:
     data_path: ./data/
     version: phoenix_2014_trans
+    annotation_format: pami0
     sgn: sign
     txt: text
     gls: gloss
@@ -50,7 +51,7 @@ training:
     reset_scheduler: false
     reset_optimizer: false
     random_seed: 42
-    model_dir: "./sign_sample_model"
+    model_dir: "./models/phoenix_de"
     recognition_loss_weight: 1.0
     translation_loss_weight: 1.0
     eval_metric: bleu

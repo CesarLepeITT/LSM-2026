@@ -1,3 +1,6 @@
+"""
+Model evaluation script - Modernized (no torchtext dependency)
+"""
 import sys
 import torch
 from signjoey.data import load_data
@@ -53,7 +56,7 @@ def evaluate_model(cfg_file):
     level = cfg["data"]["level"]
     dataset_version = cfg["data"].get("version", "how2sign")
     
-    print("Iniciando inferencia sobre el partición de prueba...")
+    print("Iniciando inferencia sobre la partición de prueba...")
     
     # Loss functions required for API compatibility
     recognition_loss_function = torch.nn.CTCLoss(blank=model.gls_vocab.stoi[SIL_TOKEN], zero_infinity=True) if do_recognition else None

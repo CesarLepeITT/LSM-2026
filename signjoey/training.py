@@ -32,8 +32,8 @@ from signjoey.metrics import wer_single
 from signjoey.vocabulary import SIL_TOKEN
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
-from torchtext.legacy.data import Dataset
-from torch.cuda.amp import autocast, GradScaler
+from torch.utils.data import Dataset
+from torch.amp import autocast, GradScaler
 from typing import List, Dict
 
 
@@ -171,7 +171,7 @@ class TrainManager:
                 self.recognition_loss_function.cuda()
 
         # Initialize Mixed Precision GradScaler
-        self.scaler = GradScaler()
+        self.scaler = GradScaler('cuda')
 
         # initialize training statistics
         self.steps = 0
@@ -207,7 +207,7 @@ class TrainManager:
     def _get_recognition_params(self, train_config) -> None:
         # NOTE (Cihan): The blank label is the silence index in the gloss vocabulary.
         #   There is an assertion in the GlossVocabulary class's __init__.
-        #   This is necessary to do TensorFlow decoding, as it is hardcoded
+        #   This is necessary for CTC decoding, as it is hardcoded to be 0.
         #   Currently it is hardcoded as 0.
         self.gls_silence_token = self.model.gls_vocab.stoi[SIL_TOKEN]
         assert self.gls_silence_token == 0
@@ -343,7 +343,7 @@ class TrainManager:
         if self.use_cuda:
             self.model.cuda()
 
-    def train_and_validate(self, train_data: Dataset, valid_data: Dataset) -> None:
+    def train_and_validate(self, train_data, valid_data) -> None:
         """
         Train the model and validate it from time to time on the validation set.
 
@@ -356,6 +356,10 @@ class TrainManager:
             batch_type=self.batch_type,
             train=True,
             shuffle=self.shuffle,
+            txt_vocab=self.model.txt_vocab,
+            gls_vocab=self.model.gls_vocab,
+            txt_lowercase=self.txt_lowercase if hasattr(self, 'txt_lowercase') else False,
+            level=self.level,
         )
         epoch_no = None
         for epoch_no in range(self.epochs):
@@ -376,12 +380,12 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
-            for batch in iter(train_iter):
+            for batch_dict in iter(train_iter):
                 # reactivate training
-                # create a Batch object from torchtext batch
+                # create a Batch object from DataLoader batch dict
                 batch = Batch(
                     is_train=True,
-                    torch_batch=batch,
+                    batch_dict=batch_dict,
                     txt_pad_index=self.txt_pad_index,
                     sgn_dim=self.feature_size,
                     use_cuda=self.use_cuda,
@@ -740,7 +744,7 @@ class TrainManager:
         :return normalized_translation_loss: Normalized translation loss
         """
 
-        with autocast():
+        with autocast(device_type='cuda', enabled=self.use_cuda):
             recognition_loss, translation_loss = self.model.get_loss_for_batch(
                 batch=batch,
                 recognition_loss_function=self.recognition_loss_function

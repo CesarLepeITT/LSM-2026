@@ -1,6 +1,6 @@
 # coding: utf-8
 """
-Collection of helper functions
+Collection of helper functions - Modernized (no torchtext dependency)
 """
 import copy
 import glob
@@ -17,7 +17,6 @@ import numpy as np
 
 import torch
 from torch import nn, Tensor
-from torchtext.data import Dataset
 import yaml
 from signjoey.vocabulary import GlossVocabulary, TextVocabulary
 
@@ -113,12 +112,14 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def log_data_info(
-    train_data: Dataset,
-    valid_data: Dataset,
-    test_data: Dataset,
+    train_data,
+    valid_data,
+    test_data,
     gls_vocab: GlossVocabulary,
     txt_vocab: TextVocabulary,
     logging_function: Callable[[str], None],
@@ -141,9 +142,10 @@ def log_data_info(
         )
     )
 
+    first_sample = train_data[0]
     logging_function(
         "First training example:\n\t[GLS] {}\n\t[TXT] {}".format(
-            " ".join(vars(train_data[0])["gls"]), " ".join(vars(train_data[0])["txt"])
+            first_sample["gloss"], first_sample["text"]
         )
     )
 

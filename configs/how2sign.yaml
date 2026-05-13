@@ -1,32 +1,86 @@
+name: how2sign_experiment
 data:
-    # IMPORTANTE: Apuntar a la carpeta del idioma (data/en/ para How2Sign o data/de/ para PHOENIX)
+    # Ruta al directorio de datos del idioma (inglés)
     data_path: data/en/
     version: how2sign
-    # Ajusta esto según el tamaño de tu vector de keypoints (ej. 50 * 3)
-    feature_size: 150 
+    annotation_format: pami0
+    # Ajustar según el tamaño del vector de features (ej. 50 keypoints * 3 coords = 150)
+    feature_size: 150
     level: word
     txt_lowercase: true
-    max_sent_length: 200 # Reducir sentencias extremadamente largas
+    max_sent_length: 200
+    random_train_subset: -1
+    random_dev_subset: -1
+
+testing:
+    recognition_beam_sizes: [1, 2, 3, 5]
+    translation_beam_sizes: [1, 2, 3, 5]
+    translation_beam_alphas: [-1, 0, 1, 2]
 
 training:
     use_cuda: true
-    # VRAM STRICT OPTIMIZATION: 
-    batch_size: 2             # Un batch diminuto cabe en 2GB VRAM
-    batch_multiplier: 16      # Gradient Accumulation: Simula un batch real de 32 (2 * 16)
+    # VRAM STRICT OPTIMIZATION:
+    batch_size: 2               # Batch diminuto para GPUs con poca VRAM
+    batch_multiplier: 16        # Gradient Accumulation: Simula batch real de 32 (2 * 16)
     epochs: 100
     learning_rate: 0.001
     eval_batch_size: 2
     recognition_loss_weight: 1.0
     translation_loss_weight: 1.0
+    model_dir: "./models/how2sign_en"
+    eval_metric: bleu
+    optimizer: adam
+    batch_type: sentence
+    translation_normalization: batch
+    eval_recognition_beam_size: 1
+    eval_translation_beam_size: 1
+    eval_translation_beam_alpha: -1
+    overwrite: true
+    shuffle: true
+    translation_max_output_length: 100
+    keep_last_ckpts: 3
+    logging_freq: 50
+    validation_freq: 200
+    betas: [0.9, 0.998]
+    scheduling: plateau
+    learning_rate_min: 1.0e-07
+    weight_decay: 0.001
+    patience: 8
+    decrease_factor: 0.7
+    label_smoothing: 0.1
+    random_seed: 42
+    early_stopping_metric: eval_metric
 
 model:
+    initializer: xavier
+    bias_initializer: zeros
+    init_gain: 1.0
+    embed_initializer: xavier
+    embed_init_gain: 1.0
+    tied_softmax: false
     encoder:
         type: transformer
-        hidden_size: 128     # Reducido drásticamente (original era 512)
-        num_layers: 2        # Reducido (original 3)
-        num_heads: 4         # Reducido (original 8)
+        num_layers: 2
+        num_heads: 4
+        embeddings:
+            embedding_dim: 128
+            scale: false
+            dropout: 0.1
+            norm_type: batch
+            activation_type: softsign
+        hidden_size: 128
+        ff_size: 512
+        dropout: 0.1
     decoder:
         type: transformer
-        hidden_size: 128     # Reducido drásticamente
-        num_layers: 2        # Reducido
-        num_heads: 4         # Reducido
+        num_layers: 2
+        num_heads: 4
+        embeddings:
+            embedding_dim: 128
+            scale: false
+            dropout: 0.1
+            norm_type: batch
+            activation_type: softsign
+        hidden_size: 128
+        ff_size: 512
+        dropout: 0.1

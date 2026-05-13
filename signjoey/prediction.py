@@ -10,7 +10,7 @@ import time
 import torch.nn as nn
 
 from typing import List
-from torchtext.data import Dataset
+from torch.utils.data import Dataset
 from signjoey.loss import XentLoss
 from signjoey.helpers import (
     bpe_postprocess,
@@ -32,7 +32,7 @@ from signjoey.phoenix_utils.phoenix_cleanup import (
 # pylint: disable=too-many-arguments,too-many-locals,no-member
 def validate_on_data(
     model: SignModel,
-    data: Dataset,
+    data,
     batch_size: int,
     use_cuda: bool,
     sgn_dim: int,
@@ -108,6 +108,9 @@ def validate_on_data(
         batch_type=batch_type,
         shuffle=False,
         train=False,
+        txt_vocab=model.txt_vocab,
+        gls_vocab=model.gls_vocab,
+        level=level if level else "word",
     )
 
     # disable dropout
@@ -122,10 +125,10 @@ def validate_on_data(
         total_num_txt_tokens = 0
         total_num_gls_tokens = 0
         total_num_seqs = 0
-        for valid_batch in iter(valid_iter):
+        for valid_batch_dict in iter(valid_iter):
             batch = Batch(
                 is_train=False,
-                torch_batch=valid_batch,
+                batch_dict=valid_batch_dict,
                 txt_pad_index=txt_pad_index,
                 sgn_dim=sgn_dim,
                 use_cuda=use_cuda,
@@ -379,7 +382,7 @@ def test(
         if use_cuda:
             translation_loss_function.cuda()
 
-    # NOTE (Cihan): Currently Hardcoded to be 0 for TensorFlow decoding
+    # NOTE (Cihan): Currently Hardcoded to be 0 for CTC decoding
     assert model.gls_vocab.stoi[SIL_TOKEN] == 0
 
     if do_recognition:
