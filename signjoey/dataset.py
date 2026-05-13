@@ -111,21 +111,31 @@ class SignTranslationDataset(Dataset):
                     })
 
     def _load_features(self, name: str, features_dir: Optional[str]) -> Optional[torch.Tensor]:
-        """Load pre-extracted features for a given sample name."""
+        """Load pre-extracted features for a given sample name.
+        Searches in features_dir directly, then in split subdirs (train/dev/test).
+        """
         if features_dir is None:
             return None
 
-        # Try .pt format first, then .npy
-        pt_path = os.path.join(features_dir, f"{name}.pt")
-        npy_path = os.path.join(features_dir, f"{name}.npy")
+        # Search paths in priority order
+        search_paths = [
+            os.path.join(features_dir, f"{name}.pt"),
+            os.path.join(features_dir, f"{name}.npy"),
+        ]
+        # Also search in split subdirectories
+        for split in ["train", "dev", "test"]:
+            search_paths.append(os.path.join(features_dir, split, f"{name}.pt"))
+            search_paths.append(os.path.join(features_dir, split, f"{name}.npy"))
 
-        if os.path.exists(pt_path):
-            return torch.load(pt_path, map_location="cpu", weights_only=True)
-        elif os.path.exists(npy_path):
-            import numpy as np
-            return torch.from_numpy(np.load(npy_path)).float()
-        else:
-            return None
+        for path in search_paths:
+            if os.path.exists(path):
+                if path.endswith(".pt"):
+                    return torch.load(path, map_location="cpu", weights_only=True)
+                else:
+                    import numpy as np
+                    return torch.from_numpy(np.load(path)).float()
+
+        return None
 
     def __len__(self):
         return len(self.samples)
