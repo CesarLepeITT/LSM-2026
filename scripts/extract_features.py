@@ -108,7 +108,7 @@ def extract_features_for_split(
     split: str,
     model_name: str,
     batch_size: int = 64,
-    num_workers: int = 4,
+    num_workers: int = 0,
     device: torch.device = None,
     annotation_file: str = None,
 ):

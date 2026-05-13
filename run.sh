@@ -71,6 +71,7 @@ set +e
 
 DATASETS_CONF="data/datasets.conf"
 DOWNLOAD_SCRIPT="data/download.sh"
+EXTRACT_SCRIPT="scripts/extract_features.sh"
 
 check_data_integrity() {
     local datasets_found=0
@@ -97,9 +98,10 @@ while true; do
     echo -e "${BOLD}========================================${NC}"
     echo "1) Abrir Gestor de Datasets (Descargar/Preparar)"
     echo "2) Comprobar integridad de datos actuales"
-    echo "3) Continuar con el entrenamiento"
+    echo "3) Extraer características (Features) de un dataset"
+    echo "4) Continuar con el entrenamiento"
     echo -e "${BOLD}========================================${NC}\n"
-    read -p "Selecciona una opción [1-3]: " opt_data
+    read -p "Selecciona una opción [1-4]: " opt_data
 
     case $opt_data in
         1)
@@ -116,6 +118,15 @@ while true; do
             read -p "Presiona Enter para volver..."
             ;;
         3)
+            echo -e "\n${CYAN}=== Extracción de Características ===${NC}"
+            if [ -f "${EXTRACT_SCRIPT}" ]; then
+                chmod +x "${EXTRACT_SCRIPT}"
+                "${EXTRACT_SCRIPT}"
+            else
+                echo -e "${RED}Error: No se encuentra ${EXTRACT_SCRIPT}${NC}"
+            fi
+            ;;            
+        4)
             echo -e "\nValidando requisitos para continuar..."
             check_data_integrity
             valid_count=$?
